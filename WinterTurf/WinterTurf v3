@@ -1,190 +1,6 @@
-## Atmospheric
+## Soil Temperature
 
-#Data
-
-(
-(
-(SELECT
-  "time",
-  value,
-  measure AS "metric"
-FROM $project_key.data
-WHERE
-  $__timeFilter(time)
-  AND node_id = '$node'
-  AND (measure ilike '%HAAR.SHT31%' or measure ilike '%HAAR.DPS368.Press%')
-ORDER BY time )
-UNION
-(
-with temp as (
-select time, value as "temp"
-from $project_key."data"
-where $__timeFilter(time)
-and node_id = '$node'
-and measure = 'HAAR.SHT31.Temperature.2.4'
-), hum as (
-select time, value as "hum"
-from $project_key."data"
-where $__timeFilter(time)
-and node_id = '$node'
-and measure = 'HAAR.SHT31.Humidity.2.4'
-), press as (
-select time, value as "press"
-from $project_key."data"
-where $__timeFilter(time)
-and node_id = '$node'
-and measure = 'HAAR.DPS368.Pressure.2.4'
-),
-transposed_and_flagged as (
-select press.time, join1.temp, join1.hum, press.press,
-case
-when (join1.temp < $HaarTempMin or
-join1.temp > $HaarTempMax or
-join1.temp is null or
-join1.hum < $HaarRHMin or
-join1.hum > $HaarRHMax or
-join1.hum is null or
-press.press < $HaarPresMin or
-press.press > $HaarPresMax or
-press.press is null) then 1
-else 0
-end as range_flag
-from press
-join (select temp.time, temp.temp, hum.hum from temp join hum on temp.time = hum.time) as join1
-on join1.time = press.time
-)
-select time, range_flag as value, 'Value Out of Range Flag' as metric
-from transposed_and_flagged
-order by time
-)
-)
-UNION
-(
-WITH message_timestamps as (
-  SELECT
-    DISTINCT "time" AS "time"
-  FROM $project_key.data
-  WHERE
-    $__timeFilter("time")
-    AND node_id = '$node'
-    AND measure NOT ILIKE 'altitude'
-    AND measure NOT ILIKE 'latitude'
-    AND measure NOT ILIKE 'longitude'
-  ORDER BY 1
-), 
-pressure_observations as (
-  SELECT
-    "time" AS pressure_observation
-  FROM $project_key.data
-  WHERE
-    $__timeFilter("time")
-    AND data.measure = 'HAAR.DPS368.Pressure.2.4'
-    AND node_id = '$node'
-),
-humidity_observations as (
-  SELECT
-    "time" AS humidity_observation
-  FROM $project_key.data
-  WHERE
-    $__timeFilter("time")
-    AND data.measure = 'HAAR.SHT31.Humidity.2.4'
-    AND node_id = '$node'
-), 
-temperature_observations as (
-  SELECT
-    "time" AS temperature_observation
-  FROM $project_key.data
-  WHERE
-    $__timeFilter("time")
-    AND data.measure = 'HAAR.SHT31.Temperature.2.4'
-    AND node_id = '$node'
-)
-SELECT 
-  "time",
-  CASE
-    WHEN (pressure_observation IS NULL) then 1
-    WHEN (humidity_observation IS NULL) then 1
-    WHEN (temperature_observation is NULL) then 1
-    ELSE 0
-  END AS value,
-  'Missing Value Flag' as metric
-FROM message_timestamps 
-  LEFT JOIN pressure_observations ON time = pressure_observation 
-  LEFT JOIN humidity_observations ON time = humidity_observation 
-  LEFT JOIN temperature_observations ON time = temperature_observation
-) ORDER BY 1
-)
-UNION
-(
-WITH std_dev_timestamps as (
-  SELECT
-    DISTINCT "time" as std_dev_timestamp
-  FROM 
-  (
-    SELECT
-      "time",
-      value,
-      avg(value) over w as _avg,
-      stddev(value) over w as _stddev,
-      measure
-    FROM $project_key.data
-    WHERE
-      $__timeFilter(time)
-      AND node_id = '$node'
-      AND (measure ilike '%HAAR.SHT31%' or measure ilike '%HAAR.DPS368.Press%')
-    WINDOW w AS (partition by measure, time_bucket(INTERVAL '$window minutes', "time"))
-    ORDER BY time
-  ) AS d
-  WHERE
-  abs(value - _avg) > (('$stddev')::numeric)*_stddev
-),
-message_timestamps as (
-  SELECT
-    DISTINCT "time" AS "time"
-  FROM $project_key.data
-  WHERE
-    $__timeFilter("time")
-    AND node_id = '$node'
-    AND measure NOT ILIKE 'altitude'
-    AND measure NOT ILIKE 'latitude'
-    AND measure NOT ILIKE 'longitude'
-  ORDER BY 1
-)
-SELECT 
-  "time",
-  CASE
-    WHEN (std_dev_timestamp is NULL) then 0
-    ELSE 1
-  END AS value,
-  'Standard Deviation Warning Flag' as metric
-FROM message_timestamps LEFT JOIN std_dev_timestamps on "time" = std_dev_timestamp
-ORDER BY 1
-)
-ORDER BY 1
-
-# daily
-
-WITH operating_days as (
-  SELECT DISTINCT date_trunc('day', time) as operating_day
-  FROM $project_key.data
-  WHERE $__timeFilter("time") AND node_id = '$node'
-  ORDER BY 1
-), 
-range_days as (
-  SELECT range_day
-  FROM generate_series('${__from:date:YYYY-MM-DD}'::date, '${__to:date:YYYY-MM-DD}'::date, '1 day') as range_day
-  ORDER BY 1
-)
-SELECT
-  range_day as time,
-  CASE 
-    WHEN (operating_day IS NULL) then 1
-    ELSE 0
-  END as "Daily Operations Flag"
-FROM range_days LEFT JOIN operating_days ON range_day = operating_day
-ORDER BY range_day
-
-## Data
+# data
 
 (
 (
@@ -196,37 +12,47 @@ FROM $project_key.data
 WHERE
   $__timeFilter(time)
   AND node_id = '$node'
-  AND (measure ilike '%Acclima Soil.VWC.1.1%' or measure ilike '%Acclima Soil.Temperature.1.1%')
-ORDER BY time )
+  AND (measure = 'Acclima Soil.Temperature.1.1' OR measure = 'Acclima Soil.Temperature.1.2' OR measure = 'Acclima Soil.Temperature.1.3')
+ORDER BY time
+)
 UNION
 (
-with st as (
-select time, value as "st"
-from $project_key."data"
+with temp1 as (
+select time, value as "temp1"
+from winterturf."data"
 where $__timeFilter(time)
 and node_id = '$node'
 and measure = 'Acclima Soil.Temperature.1.1'
-), svwc as (
-select time, value as "svwc"
-from $project_key."data"
+), temp2 as (
+select time, value as "temp2"
+from winterturf."data"
 where $__timeFilter(time)
 and node_id = '$node'
-and measure = 'Acclima Soil.VWC.1.1'
+and measure = 'Acclima Soil.Temperature.1.2'
+), temp3 as (
+select time, value as "temp3"
+from winterturf."data"
+where $__timeFilter(time)
+and node_id = '$node'
+and measure = 'Acclima Soil.Temperature.1.3'
 ),
 transposed_and_flagged as (
-select svwc.time, join1.st, join1.svwc,
+select temp3.time, join1.temp1, join1.temp2, temp3.temp3,
 case
-when (join1.st < $TDR315H_ST_MIN or
-join1.st > $TDR315H_ST_MAX or
-join1.st is null or
-svwc.svwc < $TDR315H_VWC_MIN or
-svwc.svwc > $TDR315H_VWC_MAX or
-svwc.svwc is null) then 1
+when (join1.temp1 < $TDR315H_ST_MIN or
+join1.temp1 > $TDR315H_ST_MAX or
+join1.temp1 is null or
+join1.temp2 < $TDR315H_ST_MIN or
+join1.temp2 > $TDR315H_ST_MAX or
+join1.temp2 is null or
+temp3.temp3 < $TDR315H_ST_MIN or
+temp3.temp3 > $TDR315H_ST_MAX or
+temp3.temp3 is null) then 1
 else 0
 end as range_flag
-from svwc
-join (select st.time, st.st, svwc.svwc from st join svwc on st.time = svwc.time) as join1
-on join1.time = svwc.time
+from temp3
+join (select temp1.time, temp1.temp1, temp2.temp2 from temp1 join temp2 on temp1.time = temp2.time) as join1
+on join1.time = temp3.time
 )
 select time, range_flag as value, 'Value Out of Range Flag' as metric
 from transposed_and_flagged
@@ -248,35 +74,46 @@ WITH message_timestamps as (
     AND measure NOT ILIKE 'longitude'
   ORDER BY 1
 ), 
-vwc_observations as (
+temperature1_observations as (
   SELECT
-    "time" AS vwc_observation
-  FROM $project_key.data
-  WHERE
-    $__timeFilter("time")
-    AND data.measure = 'Acclima Soil.VWC.1.1'
-    AND node_id = '$node'
-),
-temperature_observations as (
-  SELECT
-    "time" AS temperature_observation
+    "time" AS temperature1_observation
   FROM $project_key.data
   WHERE
     $__timeFilter("time")
     AND data.measure = 'Acclima Soil.Temperature.1.1'
     AND node_id = '$node'
+), 
+temperature2_observations as (
+  SELECT
+    "time" AS temperature2_observation
+  FROM $project_key.data
+  WHERE
+    $__timeFilter("time")
+    AND data.measure = 'Acclima Soil.Temperature.1.2'
+    AND node_id = '$node'
+), 
+temperature3_observations as (
+  SELECT
+    "time" AS temperature3_observation
+  FROM $project_key.data
+  WHERE
+    $__timeFilter("time")
+    AND data.measure = 'Acclima Soil.Temperature.1.3'
+    AND node_id = '$node'
 )
 SELECT 
   "time",
   CASE
-    WHEN (vwc_observation IS NULL) then 1
-    WHEN (temperature_observation is NULL) then 1
+    WHEN (temperature1_observation is NULL) then 1
+    WHEN (temperature2_observation is NULL) then 1
+    WHEN (temperature3_observation is NULL) then 1
     ELSE 0
   END AS value,
   'Missing Value Flag' as metric
 FROM message_timestamps 
-  LEFT JOIN vwc_observations ON time = vwc_observation  
-  LEFT JOIN temperature_observations ON time = temperature_observation
+  LEFT JOIN temperature1_observations ON time = temperature1_observation 
+  LEFT JOIN temperature2_observations ON time = temperature2_observation 
+  LEFT JOIN temperature3_observations ON time = temperature3_observation
 ) ORDER BY 1
 )
 UNION
@@ -296,7 +133,7 @@ WITH std_dev_timestamps as (
     WHERE
       $__timeFilter(time)
       AND node_id = '$node'
-      AND (measure ilike '%Acclima Soil.VWC.1.1%' or measure ilike '%Acclima Soil.Temperature.1.1%')
+      AND (measure ilike '%Acclima Soil.Temperature%')
     WINDOW w AS (partition by measure, time_bucket(INTERVAL '$window minutes', "time"))
     ORDER BY time
   ) AS d
@@ -349,9 +186,9 @@ SELECT
 FROM range_days LEFT JOIN operating_days ON range_day = operating_day
 ORDER BY range_day
 
-## EC Bulk
+## Soil VWC
 
-# Data
+# data
 
 (
 (
@@ -363,22 +200,51 @@ FROM $project_key.data
 WHERE
   $__timeFilter(time)
   AND node_id = '$node'
-  AND (measure = 'Acclima Soil.EC_BULK.1.1')
+  AND (measure = 'Acclima Soil.VWC.1.1' OR measure = 'Acclima Soil.VWC.1.2' OR measure = 'Acclima Soil.VWC.1.3')
 ORDER BY time )
 UNION
-SELECT
-  "time" AS "time",
-  case
-    when (value IS NULL) then 1
-    when (measure = 'Acclima Soil.EC_BULK.1.1' and (value < $TDR_BEC_Min or value > $TDR_BEC_Max)) then 1
-    else 0
-  end as value,
-  'Value Out Of Range Flag' as metric
-FROM $project_key.data
-WHERE
-  $__timeFilter("time")
-  AND node_id = '$node'
-  AND (measure = 'Acclima Soil.EC_BULK.1.1')
+(
+with vwc1 as (
+select time, value as "vwc1"
+from winterturf."data"
+where $__timeFilter(time)
+and node_id = '$node'
+and measure = 'Acclima Soil.VWC.1.1'
+), vwc2 as (
+select time, value as "vwc2"
+from winterturf."data"
+where $__timeFilter(time)
+and node_id = '$node'
+and measure = 'Acclima Soil.VWC.1.2'
+), vwc3 as (
+select time, value as "vwc3"
+from winterturf."data"
+where $__timeFilter(time)
+and node_id = '$node'
+and measure = 'Acclima Soil.VWC.1.3'
+),
+transposed_and_flagged as (
+select vwc3.time, join1.vwc1, join1.vwc2, vwc3.vwc3,
+case
+when (join1.vwc1 < $TDR315H_VWC_MIN or
+join1.vwc1 > $TDR315H_VWC_MAX or
+join1.vwc1 is null or
+join1.vwc2 < $TDR315H_VWC_MIN or
+join1.vwc2 > $TDR315H_VWC_MAX or
+join1.vwc2 is null or
+vwc3.vwc3 < $TDR315H_VWC_MIN or
+vwc3.vwc3 > $TDR315H_VWC_MAX or
+vwc3.vwc3 is null) then 1
+else 0
+end as range_flag
+from vwc3
+join (select vwc1.time, vwc1.vwc1, vwc2.vwc2 from vwc1 join vwc2 on vwc1.time = vwc2.time) as join1
+on join1.time = vwc3.time
+)
+select time, range_flag as value, 'Value Out of Range Flag' as metric
+from transposed_and_flagged
+order by time
+)
 ORDER BY 1
 )
 UNION
@@ -395,24 +261,46 @@ WITH message_timestamps as (
     AND measure NOT ILIKE 'longitude'
   ORDER BY 1
 ), 
-bec1_observations as (
+VWC1_observations as (
   SELECT
-    "time" AS bec1_observation
+    "time" AS VWC1_observation
   FROM $project_key.data
   WHERE
     $__timeFilter("time")
-    AND data.measure = 'Acclima Soil.EC_BULK.1.1'
+    AND data.measure = 'Acclima Soil.VWC.1.1'
+    AND node_id = '$node'
+), 
+VWC2_observations as (
+  SELECT
+    "time" AS VWC2_observation
+  FROM $project_key.data
+  WHERE
+    $__timeFilter("time")
+    AND data.measure = 'Acclima Soil.VWC.1.2'
+    AND node_id = '$node'
+), 
+VWC3_observations as (
+  SELECT
+    "time" AS VWC3_observation
+  FROM $project_key.data
+  WHERE
+    $__timeFilter("time")
+    AND data.measure = 'Acclima Soil.VWC.1.3'
     AND node_id = '$node'
 )
 SELECT 
   "time",
   CASE
-    WHEN (bec1_observation IS NULL) then 1
+    WHEN (VWC1_observation is NULL) then 1
+    WHEN (VWC2_observation is NULL) then 1
+    WHEN (VWC3_observation is NULL) then 1
     ELSE 0
   END AS value,
   'Missing Value Flag' as metric
 FROM message_timestamps 
-  LEFT JOIN bec1_observations ON time = bec1_observation  
+  LEFT JOIN VWC1_observations ON time = VWC1_observation 
+  LEFT JOIN VWC2_observations ON time = VWC2_observation 
+  LEFT JOIN VWC3_observations ON time = VWC3_observation
 ) ORDER BY 1
 )
 UNION
@@ -432,7 +320,7 @@ WITH std_dev_timestamps as (
     WHERE
       $__timeFilter(time)
       AND node_id = '$node'
-      AND (measure = 'Acclima Soil.EC_BULK.1.1')
+      AND (measure ilike '%Acclima Soil.VWC%')
     WINDOW w AS (partition by measure, time_bucket(INTERVAL '$window minutes', "time"))
     ORDER BY time
   ) AS d
@@ -485,35 +373,56 @@ SELECT
 FROM range_days LEFT JOIN operating_days ON range_day = operating_day
 ORDER BY range_day
 
-## Wind Speed
+## Gas
 
-# Data
+# daily
+
 (
 (
 (SELECT
   "time",
-  value*$windspd,
+  value,
   measure AS "metric"
 FROM $project_key.data
 WHERE
   $__timeFilter(time)
   AND node_id = '$node'
-  AND (measure ilike '%Talon-Aux.PORT_3.3.3%')
+  AND (measure = 'Apogee O2.Oxygen_%.1.4' OR measure = 'Hedorah.CO2.2.4')
 ORDER BY time )
 UNION
-SELECT
-  "time" AS "time",
-  case
-    when (value IS NULL) then 1
-    when (measure = 'Talon-Aux.PORT_3.3.3' and ((value*$windspd) < $E_VANE_II_MIN or (value*$windspd) > $E_VANE_II_MAX)) then 1
-    else 0
-  end as value,
-  'Value Out Of Range Flag' as metric
-FROM $project_key.data
-WHERE
-  $__timeFilter("time")
-  AND node_id = '$node'
-  AND (measure = 'Talon-Aux.PORT_3.3.3')
+(
+with oxygen as (
+select time, value as "oxygen"
+from winterturf."data"
+where $__timeFilter(time)
+and node_id = '$node'
+and measure = 'Apogee O2.Oxygen_%.1.4'
+), carbon as (
+select time, value as "carbon"
+from winterturf."data"
+where $__timeFilter(time)
+and node_id = '$node'
+and measure = 'Hedorah.CO2.2.4'
+),
+transposed_and_flagged as (
+select carbon.time, join1.oxygen, join1.carbon,
+case
+when (join1.oxygen < $Apogee_SO421_min or
+join1.oxygen > $Apogee_SO421_max or
+join1.oxygen is null or
+carbon.carbon < $hedorah_CO2_min or
+carbon.carbon > $hedorah_CO2_max or
+carbon.carbon is null) then 1
+else 0
+end as range_flag
+from carbon
+join (select oxygen.time, oxygen.oxygen, carbon.carbon from oxygen join carbon on oxygen.time = carbon.time) as join1
+on join1.time = carbon.time
+)
+select time, range_flag as value, 'Value Out of Range Flag' as metric
+from transposed_and_flagged
+order by time
+)
 ORDER BY 1
 )
 UNION
@@ -530,24 +439,35 @@ WITH message_timestamps as (
     AND measure NOT ILIKE 'longitude'
   ORDER BY 1
 ), 
-windspd_observations as (
+ox_observations as (
   SELECT
-    "time" AS windspd_observation
+    "time" AS ox_observation
   FROM $project_key.data
   WHERE
     $__timeFilter("time")
-    AND data.measure = 'Talon-Aux.PORT_3.3.3'
+    AND data.measure = 'Apogee O2.Oxygen_%.1.4'
+    AND node_id = '$node'
+), 
+hed_observations as (
+  SELECT
+    "time" AS hed_observation
+  FROM $project_key.data
+  WHERE
+    $__timeFilter("time")
+    AND data.measure = 'Hedorah.CO2.2.4'
     AND node_id = '$node'
 )
 SELECT 
   "time",
   CASE
-    WHEN (windspd_observation IS NULL) then 1
+    WHEN (ox_observation is NULL) then 1
+    WHEN (hed_observation is NULL) then 1
     ELSE 0
   END AS value,
   'Missing Value Flag' as metric
 FROM message_timestamps 
-  LEFT JOIN windspd_observations ON time = windspd_observation  
+  LEFT JOIN ox_observations ON time = ox_observation 
+  LEFT JOIN hed_observations ON time = hed_observation 
 ) ORDER BY 1
 )
 UNION
@@ -567,7 +487,7 @@ WITH std_dev_timestamps as (
     WHERE
       $__timeFilter(time)
       AND node_id = '$node'
-      AND (measure ilike '%Talon-Aux.PORT_3.3.3%')
+      AND (measure = 'Apogee O2.Oxygen_%.1.4' OR measure = 'Hedorah.CO2.2.4')
     WINDOW w AS (partition by measure, time_bucket(INTERVAL '$window minutes', "time"))
     ORDER BY time
   ) AS d
@@ -598,7 +518,7 @@ ORDER BY 1
 )
 ORDER BY 1
 
-#daily
+# daily
 
 WITH operating_days as (
   SELECT DISTINCT date_trunc('day', time) as operating_day
@@ -620,47 +540,11 @@ SELECT
 FROM range_days LEFT JOIN operating_days ON range_day = operating_day
 ORDER BY range_day
 
-## Average wind speed (stat) - reduce mean
-
-SELECT
-    "time",
-    value*$windspd,
-    measure
-  FROM $project_key.data
-  WHERE
-    $__timeFilter(time)
-    AND node_id = '$node'
-    AND (measure ilike '%Talon-Aux.PORT_3.3.3%')
-  ORDER BY time
-
-  ## Wind direction
+## Gas - Auxiliary
 
 # A
 
-  SELECT
-    "time",
-    value,
-    measure
-  FROM $project_key.data
-  WHERE
-    $__timeFilter(time)
-    AND node_id = '$node'
-    AND (measure ilike '%Talon-Aux.PORT_1.1.3%')
-  ORDER BY 1
-
-  # B
-
-  Expression Math
-  (($A - 165)/2970)*360
-
-  # C
-  Expression reduce mean $B
-
-  ## QAQC wind direction
-
-#A
-
-  SELECT
+SELECT
   "time",
   value,
   measure AS "metric"
@@ -668,352 +552,10 @@ FROM $project_key.data
 WHERE
   $__timeFilter(time)
   AND node_id = '$node'
-  AND (measure ilike '%Talon-Aux.PORT_1.1.3%')
-ORDER BY time 
+  AND (measure = 'Apogee O2.Temperature.1.4' OR measure = 'Hedorah.Temperature.2.4' OR measure = 'Hedorah.Humidity.2.4')
+ORDER BY time
 
-# B
-
-Expression Math
-(($A - 165)/2970)*360
-
-# C
-
-# range
-
-SELECT
-  "time" AS "time",
-  case
-    when (value IS NULL) then 1
-    when (measure = 'Talon-Aux.PORT_1.1.3' and ((((value-165)/2970)*360) < $e_vane_II_dir_min or (((value-165)/2970)*360) > $e_vane_II_dir_max)) then 1
-    else 0
-  end as value,
-  'Value Out Of Range Flag' as metric
-FROM $project_key.data
-WHERE
-  $__timeFilter("time")
-  AND node_id = '$node'
-  AND measure = 'Talon-Aux.PORT_1.1.3'
-ORDER BY 1
-
-# daily
-
-SELECT
-  "time" AS "time",
-  case
-    when (value IS NULL) then 1
-    when (measure = 'Talon-Aux.PORT_1.1.3' and ((((value-165)/2970)*360) < $e_vane_II_dir_min or (((value-165)/2970)*360) > $e_vane_II_dir_max)) then 1
-    else 0
-  end as value,
-  'Value Out Of Range Flag' as metric
-FROM $project_key.data
-WHERE
-  $__timeFilter("time")
-  AND node_id = '$node'
-  AND measure = 'Talon-Aux.PORT_1.1.3'
-ORDER BY 1
-
-# Missing value
-
-WITH message_timestamps as (
-  SELECT
-    DISTINCT "time" AS "time"
-  FROM $project_key.data
-  WHERE
-    $__timeFilter("time")
-    AND node_id = '$node'
-    AND measure NOT ILIKE 'altitude'
-    AND measure NOT ILIKE 'latitude'
-    AND measure NOT ILIKE 'longitude'
-  ORDER BY 1
-), 
-winddirection_observations as (
-  SELECT
-    "time" AS winddirection_observation
-  FROM $project_key.data
-  WHERE
-    $__timeFilter("time")
-    AND data.measure = 'Talon-Aux.PORT_1.1.3'
-    AND node_id = '$node'
-)
-SELECT 
-  "time",
-  CASE
-    WHEN (winddirection_observation IS NULL) then 1
-    ELSE 0
-  END AS value,
-  'Missing Value Flag' as metric
-FROM message_timestamps 
-  LEFT JOIN winddirection_observations ON time = winddirection_observation 
-ORDER BY 1
-
-## Wind direction (stat) - with value mappings directions
-
-SELECT
-  Calcs.time as time,
-  (360 + atan2(AVG(Calcs.AngleN)  OVER(), AVG(Calcs.AngleE) OVER() )*180/pi())::INTEGER % 360 as MeanAngle,
-  Calcs.AngleN as "AngleN",
-  Calcs.AngleE as "AngleE"
-FROM
-(
-SELECT 
-    to_timestamp((message::json->'Data'->>'Time')::int) as time,
-    sin((((
-      ((elems1->'Talon-Aux'->'PORT_1'->>1)::float)
-    ) - 165)/2970)*2*pi()) AS AngleN,
-    cos((((
-      ((elems1->'Talon-Aux'->'PORT_1'->>1)::float)
-    ) - 165)/2970)*2*pi()) AS AngleE
-    FROM $project_key.raw, jsonb_array_elements((message::jsonb)->'Data'->'Devices') elems1
-    WHERE
-        $__timeFilter("publish_time") 
-        AND event = 'data/v2' 
-        AND node_id = '$node' 
-        AND elems1 ? 'Talon-Aux' 
-        AND jsonb_typeof((elems1->'Talon-Aux'->'PORT_1'->1)) != 'null' 
-        -- AND json_typeof((message::json->'Data'->'Time')) != 'null'
-        AND is_valid_json(message) 
-        AND is_valid_time(message)
-) Calcs
-ORDER BY 1
-
-## Rainfall
-
-(
-(
-(SELECT
-  "time",
-  value *$rain,
-  measure AS "metric"
-FROM $project_key.data
-WHERE
-  $__timeFilter(time)
-  AND node_id = '$node'
-  AND (measure ilike '%Talon-Aux.PORT_2.2.3%')
-ORDER BY time )
-UNION
-SELECT
-  "time" AS "time",
-  case
-    when (value IS NULL) then 1
-    when (measure = 'Talon-Aux.PORT_2.2.3' and ((value*$rain) < $Davis_AeroCone_6466M_MIN or (value*$rain) > $Davis_AeroCone_6466M_MAX)) then 1
-    else 0
-  end as value,
-  'Value Out Of Range Flag' as metric
-FROM $project_key.data
-WHERE
-  $__timeFilter("time")
-  AND node_id = '$node'
-  AND (measure = 'Talon-Aux.PORT_2.2.3')
-ORDER BY 1
-)
-UNION
-(
-WITH message_timestamps as (
-  SELECT
-    DISTINCT "time" AS "time"
-  FROM $project_key.data
-  WHERE
-    $__timeFilter("time")
-    AND node_id = '$node'
-    AND measure NOT ILIKE 'altitude'
-    AND measure NOT ILIKE 'latitude'
-    AND measure NOT ILIKE 'longitude'
-  ORDER BY 1
-), 
-rain_observations as (
-  SELECT
-    "time" AS rain_observation
-  FROM $project_key.data
-  WHERE
-    $__timeFilter("time")
-    AND data.measure = 'Talon-Aux.PORT_2.2.3'
-    AND node_id = '$node'
-)
-SELECT 
-  "time",
-  CASE
-    WHEN (rain_observation IS NULL) then 1
-    ELSE 0
-  END AS value,
-  'Missing Value Flag' as metric
-FROM message_timestamps 
-  LEFT JOIN rain_observations ON time = rain_observation  
-) ORDER BY 1
-)
-UNION
-(
-WITH std_dev_timestamps as (
-  SELECT
-    DISTINCT "time" as std_dev_timestamp
-  FROM 
-  (
-    SELECT
-      "time",
-      value,
-      avg(value) over w as _avg,
-      stddev(value) over w as _stddev,
-      measure
-    FROM $project_key.data
-    WHERE
-      $__timeFilter(time)
-      AND node_id = '$node'
-      AND (measure ilike '%Talon-Aux.PORT_2.2.3%')
-    WINDOW w AS (partition by measure, time_bucket(INTERVAL '$window minutes', "time"))
-    ORDER BY time
-  ) AS d
-  WHERE
-  abs(value - _avg) > (('$stddev')::numeric)*_stddev
-),
-message_timestamps as (
-  SELECT
-    DISTINCT "time" AS "time"
-  FROM $project_key.data
-  WHERE
-    $__timeFilter("time")
-    AND node_id = '$node'
-    AND measure NOT ILIKE 'altitude'
-    AND measure NOT ILIKE 'latitude'
-    AND measure NOT ILIKE 'longitude'
-  ORDER BY 1
-)
-SELECT 
-  "time",
-  CASE
-    WHEN (std_dev_timestamp is NULL) then 0
-    ELSE 1
-  END AS value,
-  'Standard Deviation Warning Flag' as metric
-FROM message_timestamps LEFT JOIN std_dev_timestamps on "time" = std_dev_timestamp
-ORDER BY 1
-)
-ORDER BY 1
-
-## Total Rain (stat)
-
-SELECT
-  "time",
-  value *$rain,
-  measure AS "metric"
-FROM $project_key.data
-WHERE
-  $__timeFilter(time)
-  AND node_id = '$node'
-  AND (measure ilike '%Talon-Aux.PORT_2.2.3%')
-ORDER BY time 
-
-## Pyranometer
-
-(
-(
-(SELECT
-  "time",
-  value,
-  measure AS "metric"
-FROM $project_key.data
-WHERE
-  $__timeFilter(time)
-  AND node_id = '$node'
-  AND (measure ilike '%Apogee Pyro.Solar.1.4%')
-ORDER BY time )
-UNION
-SELECT
-  "time" AS "time",
-  case
-    when (value IS NULL) then 1
-    when (measure = 'Apogee Pyro.Solar.1.4' and (value < $Apogee_SP_421_SS_MIN or value > $Apogee_SP_421_SS_MAX)) then 1
-    else 0
-  end as value,
-  'Value Out Of Range Flag' as metric
-FROM $project_key.data
-WHERE
-  $__timeFilter("time")
-  AND node_id = '$node'
-  AND (measure = 'Apogee Pyro.Solar.1.4')
-ORDER BY 1
-)
-UNION
-(
-WITH message_timestamps as (
-  SELECT
-    DISTINCT "time" AS "time"
-  FROM $project_key.data
-  WHERE
-    $__timeFilter("time")
-    AND node_id = '$node'
-    AND measure NOT ILIKE 'altitude'
-    AND measure NOT ILIKE 'latitude'
-    AND measure NOT ILIKE 'longitude'
-  ORDER BY 1
-), 
-windspd_observations as (
-  SELECT
-    "time" AS windspd_observation
-  FROM $project_key.data
-  WHERE
-    $__timeFilter("time")
-    AND data.measure = 'Apogee Pyro.Solar.1.4'
-    AND node_id = '$node'
-)
-SELECT 
-  "time",
-  CASE
-    WHEN (windspd_observation IS NULL) then 1
-    ELSE 0
-  END AS value,
-  'Missing Value Flag' as metric
-FROM message_timestamps 
-  LEFT JOIN windspd_observations ON time = windspd_observation  
-) ORDER BY 1
-)
-UNION
-(
-WITH std_dev_timestamps as (
-  SELECT
-    DISTINCT "time" as std_dev_timestamp
-  FROM 
-  (
-    SELECT
-      "time",
-      value,
-      avg(value) over w as _avg,
-      stddev(value) over w as _stddev,
-      measure
-    FROM $project_key.data
-    WHERE
-      $__timeFilter(time)
-      AND node_id = '$node'
-      AND (measure ilike '%Apogee Pyro.Solar.1.4%')
-    WINDOW w AS (partition by measure, time_bucket(INTERVAL '$window minutes', "time"))
-    ORDER BY time
-  ) AS d
-  WHERE
-  abs(value - _avg) > (('$stddev')::numeric)*_stddev
-),
-message_timestamps as (
-  SELECT
-    DISTINCT "time" AS "time"
-  FROM $project_key.data
-  WHERE
-    $__timeFilter("time")
-    AND node_id = '$node'
-    AND measure NOT ILIKE 'altitude'
-    AND measure NOT ILIKE 'latitude'
-    AND measure NOT ILIKE 'longitude'
-  ORDER BY 1
-)
-SELECT 
-  "time",
-  CASE
-    WHEN (std_dev_timestamp is NULL) then 0
-    ELSE 1
-  END AS value,
-  'Standard Deviation Warning Flag' as metric
-FROM message_timestamps LEFT JOIN std_dev_timestamps on "time" = std_dev_timestamp
-ORDER BY 1
-)
-ORDER BY 1
-
-## All Data
+## All data
 
 # raw
 
@@ -1026,7 +568,7 @@ FROM $project_key.data
 WHERE
   $__timeFilter("time")
   AND node_id = '$node'
-  AND measure = 'HAAR.SHT31.Temperature.2.4'
+  AND measure = 'Acclima Soil.Temperature.1.1'
   )
 UNION
 SELECT
@@ -1037,7 +579,7 @@ FROM $project_key.data
 WHERE
   $__timeFilter("time")
   AND node_id = '$node'
-  AND measure = 'HAAR.SHT31.Humidity.2.4'
+  AND measure = 'Acclima Soil.Temperature.1.2'
 UNION
 SELECT
   "time" AS "time",
@@ -1047,17 +589,7 @@ FROM $project_key.data
 WHERE
   $__timeFilter("time")
   AND node_id = '$node'
-  AND measure = 'HAAR.DPS368.Pressure.2.4'
-UNION
-SELECT
-  "time" AS "time",
-  value,
-  measure as "metric"
-FROM $project_key.data
-WHERE
-  $__timeFilter("time")
-  AND node_id = '$node'
-  AND measure = 'Acclima Soil.Temperature.1.1'
+  AND measure = 'Acclima Soil.Temperature.1.3'
 UNION
 SELECT
   "time" AS "time",
@@ -1077,7 +609,47 @@ FROM $project_key.data
 WHERE
   $__timeFilter("time")
   AND node_id = '$node'
+  AND measure = 'Acclima Soil.VWC.1.2'
+UNION
+SELECT
+  "time" AS "time",
+  value,
+  measure as "metric"
+FROM $project_key.data
+WHERE
+  $__timeFilter("time")
+  AND node_id = '$node'
+  AND measure = 'Acclima Soil.VWC.1.3'
+UNION
+SELECT
+  "time" AS "time",
+  value,
+  measure as "metric"
+FROM $project_key.data
+WHERE
+  $__timeFilter("time")
+  AND node_id = '$node'
   AND measure = 'Acclima Soil.EC_BULK.1.1'
+UNION
+SELECT
+  "time" AS "time",
+  value,
+  measure as "metric"
+FROM $project_key.data
+WHERE
+  $__timeFilter("time")
+  AND node_id = '$node'
+  AND measure = 'Acclima Soil.EC_BULK.1.2'
+UNION
+SELECT
+  "time" AS "time",
+  value,
+  measure as "metric"
+FROM $project_key.data
+WHERE
+  $__timeFilter("time")
+  AND node_id = '$node'
+  AND measure = 'Acclima Soil.EC_BULK.1.3'
 UNION
 SELECT
   "time" AS "time",
@@ -1097,87 +669,7 @@ FROM $project_key.data
 WHERE
   $__timeFilter("time")
   AND node_id = '$node'
-  AND measure = 'Acclima Soil.Permitivity.1.1'
--- UNION
--- SELECT
---   "time" AS "time",
---   value,
---   measure as "metric"
--- FROM $project_key.data
--- WHERE
---   $__timeFilter("time")
---   AND node_id = '$node'
---   AND measure = 'Acclima Soil.Temperature.1.2'
--- UNION
--- SELECT
---   "time" AS "time",
---   value,
---   measure as "metric"
--- FROM $project_key.data
--- WHERE
---   $__timeFilter("time")
---   AND node_id = '$node'
---   AND measure = 'Acclima Soil.VWC.1.2'
--- UNION
--- SELECT
---   "time" AS "time",
---   value,
---   measure as "metric"
--- FROM $project_key.data
--- WHERE
---   $__timeFilter("time")
---   AND node_id = '$node'
---   AND measure = 'Acclima Soil.EC_BULK.1.2'
--- UNION
--- SELECT
---   "time" AS "time",
---   value,
---   measure as "metric"
--- FROM $project_key.data
--- WHERE
---   $__timeFilter("time")
---   AND node_id = '$node'
---   AND measure = 'Acclima Soil.EC_PORE.1.2'
--- UNION
--- SELECT
---   "time" AS "time",
---   value,
---   measure as "metric"
--- FROM $project_key.data
--- WHERE
---   $__timeFilter("time")
---   AND node_id = '$node'
---   AND measure = 'Acclima Soil.Permitivity.1.2'
-UNION
-SELECT
-  "time" AS "time",
-  value*1.207,
-  measure as "metric"
-FROM $project_key.data
-WHERE
-  $__timeFilter("time")
-  AND node_id = '$node'
-  AND measure = 'Talon-Aux.PORT_3.3.3'
-UNION
-SELECT
-  "time" AS "time",
-  ((value-165)/2970)*360,
-  measure as "metric"
-FROM $project_key.data
-WHERE
-  $__timeFilter("time")
-  AND node_id = '$node'
-  AND measure = 'Talon-Aux.PORT_1.1.3'
-UNION
-SELECT
-  "time" AS "time",
-  value*0.2,
-  measure as "metric"
-FROM $project_key.data
-WHERE
-  $__timeFilter("time")
-  AND node_id = '$node'
-  AND measure = 'Talon-Aux.PORT_2.2.3'
+  AND measure = 'Acclima Soil.EC_PORE.1.2'
 UNION
 SELECT
   "time" AS "time",
@@ -1187,80 +679,151 @@ FROM $project_key.data
 WHERE
   $__timeFilter("time")
   AND node_id = '$node'
-  AND measure = 'Apogee Pyro.Solar.1.4'
+  AND measure = 'Acclima Soil.EC_PORE.1.3'
+UNION
+SELECT
+  "time" AS "time",
+  value,
+  measure as "metric"
+FROM $project_key.data
+WHERE
+  $__timeFilter("time")
+  AND node_id = '$node'
+  AND measure = 'Acclima Soil.Permitivity.1.1'
+UNION
+SELECT
+  "time" AS "time",
+  value,
+  measure as "metric"
+FROM $project_key.data
+WHERE
+  $__timeFilter("time")
+  AND node_id = '$node'
+  AND measure = 'Acclima Soil.Permitivity.1.2'
+UNION
+SELECT
+  "time" AS "time",
+  value,
+  measure as "metric"
+FROM $project_key.data
+WHERE
+  $__timeFilter("time")
+  AND node_id = '$node'
+  AND measure = 'Acclima Soil.Permitivity.1.3'
+UNION
+SELECT
+  "time" AS "time",
+  value,
+  measure as "metric"
+FROM $project_key.data
+WHERE
+  $__timeFilter("time")
+  AND node_id = '$node'
+  AND measure = 'Apogee O2.Oxygen_%.1.4'
+UNION
+SELECT
+  "time" AS "time",
+  value,
+  measure as "metric"
+FROM $project_key.data
+WHERE
+  $__timeFilter("time")
+  AND node_id = '$node'
+  AND measure = 'Apogee O2.Temperature.1.4'
+UNION
+SELECT
+  "time" AS "time",
+  value,
+  measure as "metric"
+FROM $project_key.data
+WHERE
+  $__timeFilter("time")
+  AND node_id = '$node'
+  AND measure = 'Apogee O2.Oxygen_mV.1.4'
+UNION
+SELECT
+  "time" AS "time",
+  value,
+  measure as "metric"
+FROM $project_key.data
+WHERE
+  $__timeFilter("time")
+  AND node_id = '$node'
+  AND measure = 'Hedorah.CO2.2.4'
+UNION
+SELECT
+  "time" AS "time",
+  value,
+  measure as "metric"
+FROM $project_key.data
+WHERE
+  $__timeFilter("time")
+  AND node_id = '$node'
+  AND measure = 'Hedorah.Temperature.2.4'
+UNION
+SELECT
+  "time" AS "time",
+  value,
+  measure as "metric"
+FROM $project_key.data
+WHERE
+  $__timeFilter("time")
+  AND node_id = '$node'
+  AND measure = 'Hedorah.Humidity.2.4'
+  UNION
+SELECT
+  "time" AS "time",
+  value,
+  measure as "metric"
+FROM $project_key.data
+WHERE
+  $__timeFilter("time")
+  AND node_id = '$node'
+  AND measure = 'Kestrel.ALS.Blue.15'
+UNION
+SELECT
+  "time" AS "time",
+  value,
+  measure as "metric"
+FROM $project_key.data
+WHERE
+  $__timeFilter("time")
+  AND node_id = '$node'
+  AND measure = 'Kestrel.ALS.Clear.15'
+UNION
+SELECT
+  "time" AS "time",
+  value,
+  measure as "metric"
+FROM $project_key.data
+WHERE
+  $__timeFilter("time")
+  AND node_id = '$node'
+  AND measure = 'Kestrel.ALS.Green.15'
+UNION
+SELECT
+  "time" AS "time",
+  value,
+  measure as "metric"
+FROM $project_key.data
+WHERE
+  $__timeFilter("time")
+  AND node_id = '$node'
+  AND measure = 'Kestrel.ALS.IR.15'
+UNION
+SELECT
+  "time" AS "time",
+  value,
+  measure as "metric"
+FROM $project_key.data
+WHERE
+  $__timeFilter("time")
+  AND node_id = '$node'
+  AND measure = 'Kestrel.ALS.Red.15'
 ORDER BY 1
 
 # range
 
-SELECT
-  "time" AS "time",
-  case
-    when (value < $HaarTempMin or value > $HaarTempMax) then 1
-    else 0
-  end as value,
-  'Temperature Value Out of Range Flag' as metric
-FROM $project_key.data
-WHERE
-  $__timeFilter("time")
-  AND node_id = '$node'
-  AND measure = 'HAAR.SHT31.Temperature.2.4'
-UNION
-SELECT
-  "time" AS "time",
-  value,
-  measure as "metric"
-FROM $project_key.data
-WHERE
-  $__timeFilter("time")
-  AND node_id = '$node'
-  AND measure = 'HAAR.SHT31.Humidity.2.4'
-UNION
-SELECT
-  "time" AS "time",
-  case
-    when (value < $HaarRHMin or value > $HaarRHMax) then 1
-    else 0
-  end as value,
-  'Humidity Value Out of Range Flag' as metric
-FROM $project_key.data
-WHERE
-  $__timeFilter("time")
-  AND node_id = '$node'
-  AND measure = 'HAAR.SHT31.Humidity.2.4'
-UNION
-SELECT
-  "time" AS "time",
-  value,
-  measure as "metric"
-FROM $project_key.data
-WHERE
-  $__timeFilter("time")
-  AND node_id = '$node'
-  AND measure = 'HAAR.DPS368.Pressure.2.4'
-UNION
-SELECT
-  "time" AS "time",
-  case
-    when (value < $HaarPresMin or value > $HaarPresMax) then 1
-    else 0
-  end as value,
-  'Pressure Value Out of Range Flag' as metric
-FROM $project_key.data
-WHERE
-  $__timeFilter("time")
-  AND node_id = '$node'
-  AND measure = 'HAAR.DPS368.Pressure.2.4'
-UNION
-SELECT
-  "time" AS "time",
-  value,
-  measure as "metric"
-FROM $project_key.data
-WHERE
-  $__timeFilter("time")
-  AND node_id = '$node'
-  AND measure = 'Acclima Soil.Temperature.1.1'
-UNION
 SELECT
   "time" AS "time",
   case
@@ -1282,6 +845,52 @@ FROM $project_key.data
 WHERE
   $__timeFilter("time")
   AND node_id = '$node'
+  AND measure = 'Acclima Soil.Temperature.1.2'
+UNION
+SELECT
+  "time" AS "time",
+  case
+    when (value < $TDR315H_ST_MIN or value > $TDR315H_ST_MAX) then 1
+    else 0
+  end as value,
+  'Acclima Soil.Temperature.1.2 Value Out of Range Flag' as metric
+FROM $project_key.data
+WHERE
+  $__timeFilter("time")
+  AND node_id = '$node'
+  AND measure = 'Acclima Soil.Temperature.1.2'
+UNION
+SELECT
+  "time" AS "time",
+  value,
+  measure as "metric"
+FROM $project_key.data
+WHERE
+  $__timeFilter("time")
+  AND node_id = '$node'
+  AND measure = 'Acclima Soil.Temperature.1.3'
+UNION
+SELECT
+  "time" AS "time",
+  case
+    when (value < $TDR315H_ST_MIN or value > $TDR315H_ST_MAX) then 1
+    else 0
+  end as value,
+  'Acclima Soil.Temperature.1.3 Value Out of Range Flag' as metric
+FROM $project_key.data
+WHERE
+  $__timeFilter("time")
+  AND node_id = '$node'
+  AND measure = 'Acclima Soil.Temperature.1.3'
+UNION
+SELECT
+  "time" AS "time",
+  value,
+  measure as "metric"
+FROM $project_key.data
+WHERE
+  $__timeFilter("time")
+  AND node_id = '$node'
   AND measure = 'Acclima Soil.VWC.1.1'
 UNION
 SELECT
@@ -1290,12 +899,58 @@ SELECT
     when (value < $TDR315H_VWC_MIN or value > $TDR315H_VWC_MAX) then 1
     else 0
   end as value,
-  'Acclima Soil.VWC.1.1 Out of Range Flag' as metric
+  'Acclima Soil.VWC.1.1 Value Out of Range Flag' as metric
 FROM $project_key.data
 WHERE
   $__timeFilter("time")
   AND node_id = '$node'
   AND measure = 'Acclima Soil.VWC.1.1'
+UNION
+SELECT
+  "time" AS "time",
+  value,
+  measure as "metric"
+FROM $project_key.data
+WHERE
+  $__timeFilter("time")
+  AND node_id = '$node'
+  AND measure = 'Acclima Soil.VWC.1.2'
+UNION
+SELECT
+  "time" AS "time",
+  case
+    when (value < $TDR315H_VWC_MIN or value > $TDR315H_VWC_MAX) then 1
+    else 0
+  end as value,
+  'Acclima Soil.VWC.1.2 Out of Range Flag' as metric
+FROM $project_key.data
+WHERE
+  $__timeFilter("time")
+  AND node_id = '$node'
+  AND measure = 'Acclima Soil.VWC.1.2'
+UNION
+SELECT
+  "time" AS "time",
+  value,
+  measure as "metric"
+FROM $project_key.data
+WHERE
+  $__timeFilter("time")
+  AND node_id = '$node'
+  AND measure = 'Acclima Soil.VWC.1.3'
+UNION
+SELECT
+  "time" AS "time",
+  case
+    when (value < $TDR315H_VWC_MIN or value > $TDR315H_VWC_MAX) then 1
+    else 0
+  end as value,
+  'Acclima Soil.VWC.1.3 Out of Range Flag' as metric
+FROM $project_key.data
+WHERE
+  $__timeFilter("time")
+  AND node_id = '$node'
+  AND measure = 'Acclima Soil.VWC.1.3'
 UNION
 SELECT
   "time" AS "time",
@@ -1328,6 +983,52 @@ FROM $project_key.data
 WHERE
   $__timeFilter("time")
   AND node_id = '$node'
+  AND measure = 'Acclima Soil.EC_BULK.1.2'
+UNION
+SELECT
+  "time" AS "time",
+  case
+    when (value < $TDR_BEC_Min or value > $TDR_BEC_Max) then 1
+    else 0
+  end as value,
+  'Acclima Soil.EC_BULK.1.2 Out of Range Flag' as metric
+FROM $project_key.data
+WHERE
+  $__timeFilter("time")
+  AND node_id = '$node'
+  AND measure = 'Acclima Soil.EC_BULK.1.2'
+UNION
+SELECT
+  "time" AS "time",
+  value,
+  measure as "metric"
+FROM $project_key.data
+WHERE
+  $__timeFilter("time")
+  AND node_id = '$node'
+  AND measure = 'Acclima Soil.EC_BULK.1.3'
+UNION
+SELECT
+  "time" AS "time",
+  case
+    when (value < $TDR_BEC_Min or value > $TDR_BEC_Max) then 1
+    else 0
+  end as value,
+  'Acclima Soil.EC_BULK.1.3 Value Out of Range Flag' as metric
+FROM $project_key.data
+WHERE
+  $__timeFilter("time")
+  AND node_id = '$node'
+  AND measure = 'Acclima Soil.EC_BULK.1.3'
+UNION
+SELECT
+  "time" AS "time",
+  value,
+  measure as "metric"
+FROM $project_key.data
+WHERE
+  $__timeFilter("time")
+  AND node_id = '$node'
   AND measure = 'Acclima Soil.EC_PORE.1.1'
 UNION
 SELECT
@@ -1336,12 +1037,58 @@ SELECT
     when (value < $TDR_Pore_Min or value > $TDR_Pore_Max) then 1
     else 0
   end as value,
-  'Acclima Soil.EC_PORE.1.1 Out of Range Flag' as metric
+  'Acclima Soil.EC_PORE.1.1 Value Out of Range Flag' as metric
 FROM $project_key.data
 WHERE
   $__timeFilter("time")
   AND node_id = '$node'
   AND measure = 'Acclima Soil.EC_PORE.1.1'
+UNION
+SELECT
+  "time" AS "time",
+  value,
+  measure as "metric"
+FROM $project_key.data
+WHERE
+  $__timeFilter("time")
+  AND node_id = '$node'
+  AND measure = 'Acclima Soil.EC_PORE.1.2'
+UNION
+SELECT
+  "time" AS "time",
+  case
+    when (value < $TDR_Pore_Min or value > $TDR_Pore_Max) then 1
+    else 0
+  end as value,
+  'Acclima Soil.EC_PORE.1.2 Out of Range Flag' as metric
+FROM $project_key.data
+WHERE
+  $__timeFilter("time")
+  AND node_id = '$node'
+  AND measure = 'Acclima Soil.EC_PORE.1.2'
+UNION
+SELECT
+  "time" AS "time",
+  value,
+  measure as "metric"
+FROM $project_key.data
+WHERE
+  $__timeFilter("time")
+  AND node_id = '$node'
+  AND measure = 'Acclima Soil.EC_PORE.1.3'
+UNION
+SELECT
+  "time" AS "time",
+  case
+    when (value < $TDR_Pore_Min or value > $TDR_Pore_Max) then 1
+    else 0
+  end as value,
+  'Acclima Soil.EC_PORE.1.3 Out of Range Flag' as metric
+FROM $project_key.data
+WHERE
+  $__timeFilter("time")
+  AND node_id = '$node'
+  AND measure = 'Acclima Soil.EC_PORE.1.3'
 UNION
 SELECT
   "time" AS "time",
@@ -1374,20 +1121,20 @@ FROM $project_key.data
 WHERE
   $__timeFilter("time")
   AND node_id = '$node'
-  AND measure = 'Talon-Aux.PORT_3.3.3'
+  AND measure = 'Acclima Soil.Permitivity.1.2'
 UNION
 SELECT
   "time" AS "time",
   case
-    when ((value*$windspd) < $E_VANE_II_MIN or (value*$windspd) > $E_VANE_II_MAX) then 1
+    when (value < $TDR_Perm_Min or value > $TDR_Perm_Max) then 1
     else 0
   end as value,
-  'Wind Speed Value Out of Range Flag' as metric
+  'Acclima Soil.Permitivity.1.2 Value Out of Range Flag' as metric
 FROM $project_key.data
 WHERE
   $__timeFilter("time")
   AND node_id = '$node'
-  AND measure = 'Talon-Aux.PORT_3.3.3'
+  AND measure = 'Acclima Soil.Permitivity.1.2'
 UNION
 SELECT
   "time" AS "time",
@@ -1397,20 +1144,7 @@ FROM $project_key.data
 WHERE
   $__timeFilter("time")
   AND node_id = '$node'
-  AND measure = 'Talon-Aux.PORT_1.1.3'
-UNION
-SELECT
-  "time" AS "time",
-  case
-    when ((((value-165)/2970)*360) < $e_vane_II_dir_min or (((value-165)/2970)*360) > $e_vane_II_dir_max) then 1
-    else 0
-  end as value,
-  'Wind Direction Value Out of Range Flag' as metric
-FROM $project_key.data
-WHERE
-  $__timeFilter("time")
-  AND node_id = '$node'
-  AND measure = 'Talon-Aux.PORT_1.1.3'
+  AND measure = 'Acclima Soil.Permitivity.1.3'
 UNION
 SELECT
   "time" AS "time",
@@ -1420,20 +1154,20 @@ FROM $project_key.data
 WHERE
   $__timeFilter("time")
   AND node_id = '$node'
-  AND measure = 'Talon-Aux.PORT_2.2.3'
+  AND measure = 'Apogee O2.Oxygen_%.1.4'
 UNION
 SELECT
   "time" AS "time",
   case
-    when ((value*$rain) < $Davis_AeroCone_6466M_MIN or (value*$rain) > $Davis_AeroCone_6466M_MAX) then 1
+    when (value < $Apogee_SO421_min or value > $Apogee_SO421_max) then 1
     else 0
   end as value,
-  'Rain Value Out of Range Flag' as metric
+  'Apogee O2.Oxygen_%.1.4 Value Out of Range Flag' as metric
 FROM $project_key.data
 WHERE
   $__timeFilter("time")
   AND node_id = '$node'
-  AND measure = 'Talon-Aux.PORT_2.2.3'
+  AND measure = 'Apogee O2.Oxygen_%.1.4'
 UNION
 SELECT
   "time" AS "time",
@@ -1443,23 +1177,23 @@ FROM $project_key.data
 WHERE
   $__timeFilter("time")
   AND node_id = '$node'
-  AND measure = 'Apogee Pyro.Solar.1.4'
+  AND measure = 'Hedorah.CO2.2.4'
 UNION
 SELECT
   "time" AS "time",
   case
-    when (value < $Apogee_SP_421_SS_MIN or value > $Apogee_SP_421_SS_MAX) then 1
+    when (value < $hedorah_CO2_min or value > $hedorah_CO2_max) then 1
     else 0
   end as value,
-  'Apogee Pyro.Solar.1.4 Value Out of Range Flag' as metric
+  'Hedorah.CO2.2.4 Value Out of Range Flag' as metric
 FROM $project_key.data
 WHERE
   $__timeFilter("time")
   AND node_id = '$node'
-  AND measure = 'Apogee Pyro.Solar.1.4'
+  AND measure = 'Hedorah.CO2.2.4'
 ORDER BY 1
 
-# daily 
+# daily
 
 WITH operating_days as (
   SELECT DISTINCT date_trunc('day', time) as operating_day
@@ -1495,287 +1229,204 @@ WITH message_timestamps as (
     AND measure NOT ILIKE 'longitude'
   ORDER BY 1
 ), 
-vwc_observations as (
+t1_observations as (
   SELECT
-    "time" AS vwc_observation
-  FROM $project_key.data
-  WHERE
-    $__timeFilter("time")
-    AND data.measure = 'Acclima Soil.VWC.1.1'
-    AND node_id = '$node'
-),
-stemperature_observations as (
-  SELECT
-    "time" AS stemperature_observation
+    "time" AS t1_observation
   FROM $project_key.data
   WHERE
     $__timeFilter("time")
     AND data.measure = 'Acclima Soil.Temperature.1.1'
     AND node_id = '$node'
-), 
-ecb_observations as (
+),
+t2_observations as (
   SELECT
-    "time" AS ecb_observation
+    "time" AS t2_observation
+  FROM $project_key.data
+  WHERE
+    $__timeFilter("time")
+    AND data.measure = 'Acclima Soil.Temperature.1.2'
+    AND node_id = '$node'
+),
+t3_observations as (
+  SELECT
+    "time" AS t3_observation
+  FROM $project_key.data
+  WHERE
+    $__timeFilter("time")
+    AND data.measure = 'Acclima Soil.Temperature.1.3'
+    AND node_id = '$node'
+), 
+v1_observations as (
+  SELECT
+    "time" AS v1_observation
+  FROM $project_key.data
+  WHERE
+    $__timeFilter("time")
+    AND data.measure = 'Acclima Soil.VWC.1.1'
+    AND node_id = '$node'
+), 
+v2_observations as (
+  SELECT
+    "time" AS v2_observation
+  FROM $project_key.data
+  WHERE
+    $__timeFilter("time")
+    AND data.measure = 'Acclima Soil.VWC.1.2'
+    AND node_id = '$node'
+),
+v3_observations as (
+  SELECT
+    "time" AS v3_observation
+  FROM $project_key.data
+  WHERE
+    $__timeFilter("time")
+    AND data.measure = 'Acclima Soil.VWC.1.3'
+    AND node_id = '$node'
+), 
+ec1_observations as (
+  SELECT
+    "time" AS ec1_observation
   FROM $project_key.data
   WHERE
     $__timeFilter("time")
     AND data.measure = 'Acclima Soil.EC_BULK.1.1'
     AND node_id = '$node'
 ), 
-pore_observations as (
+ec2_observations as (
   SELECT
-    "time" AS pore_observation
+    "time" AS ec2_observation
   FROM $project_key.data
   WHERE
     $__timeFilter("time")
-    AND data.measure = 'Acclima Soil.EC_PORE.1.1'
+    AND data.measure = 'Acclima Soil.EC_BULK.1.2'
     AND node_id = '$node'
 ), 
-perm_observations as (
+ec3_observations as (
   SELECT
-    "time" AS perm_observation
+    "time" AS ec3_observation
   FROM $project_key.data
   WHERE
     $__timeFilter("time")
-    AND data.measure = 'Acclima Soil.Permitivity.1.1'
+    AND data.measure = 'Acclima Soil.EC_BULK.1.3'
     AND node_id = '$node'
-),  
-pressure_observations as (
+-- ), 
+-- ep1_observations as (
+--   SELECT
+--     "time" AS ep1_observation
+--   FROM $project_key.data
+--   WHERE
+--     $__timeFilter("time")
+--     AND data.measure = 'Acclima Soil.EC_PORE.1.1'
+--     AND node_id = '$node'
+-- ), 
+-- ep2_observations as (
+--   SELECT
+--     "time" AS ep2_observation
+--   FROM $project_key.data
+--   WHERE
+--     $__timeFilter("time")
+--     AND data.measure = 'Acclima Soil.EC_PORE.1.2'
+--     AND node_id = '$node'
+-- ), 
+-- ep3_observations as (
+--   SELECT
+--     "time" AS ep3_observation
+--   FROM $project_key.data
+--   WHERE
+--     $__timeFilter("time")
+--     AND data.measure = 'Acclima Soil.EC_PORE.1.3'
+--     AND node_id = '$node'
+-- ), 
+-- perm1_observations as (
+--   SELECT
+--     "time" AS perm1_observation
+--   FROM $project_key.data
+--   WHERE
+--     $__timeFilter("time")
+--     AND data.measure = 'Acclima Soil.Permitivity.1.1'
+--     AND node_id = '$node'
+-- ), 
+-- perm2_observations as (
+--   SELECT
+--     "time" AS perm2_observation
+--   FROM $project_key.data
+--   WHERE
+--     $__timeFilter("time")
+--     AND data.measure = 'Acclima Soil.Permitivity.1.2'
+--     AND node_id = '$node'
+-- ), 
+-- perm3_observations as (
+--   SELECT
+--     "time" AS perm3_observation
+--   FROM $project_key.data
+--   WHERE
+--     $__timeFilter("time")
+--     AND data.measure = 'Acclima Soil.Permitivity.1.3'
+--     AND node_id = '$node'
+), 
+ox_observations as (
   SELECT
-    "time" AS pressure_observation
+    "time" AS ox_observation
   FROM $project_key.data
   WHERE
     $__timeFilter("time")
-    AND data.measure = 'HAAR.DPS368.Pressure.2.4'
-    AND node_id = '$node'
-),
-humidity_observations as (
-  SELECT
-    "time" AS humidity_observation
-  FROM $project_key.data
-  WHERE
-    $__timeFilter("time")
-    AND data.measure = 'HAAR.SHT31.Humidity.2.4'
+    AND data.measure = 'Apogee O2.Oxygen_%.1.4'
     AND node_id = '$node'
 ), 
-temperature_observations as (
+hed_observations as (
   SELECT
-    "time" AS temperature_observation
+    "time" AS hed_observation
   FROM $project_key.data
   WHERE
     $__timeFilter("time")
-    AND data.measure = 'HAAR.SHT31.Temperature.2.4'
-    AND node_id = '$node'
-), 
-windspd_observations as (
-  SELECT
-    "time" AS windspd_observation
-  FROM $project_key.data
-  WHERE
-    $__timeFilter("time")
-    AND data.measure = 'Talon-Aux.PORT_3.3.3'
-    AND node_id = '$node'
-), 
-winddirection_observations as (
-  SELECT
-    "time" AS winddirection_observation
-  FROM $project_key.data
-  WHERE
-    $__timeFilter("time")
-    AND data.measure = 'Talon-Aux.PORT_1.1.3'
-    AND node_id = '$node'
-), 
-rain_observations as (
-  SELECT
-    "time" AS rain_observation
-  FROM $project_key.data
-  WHERE
-    $__timeFilter("time")
-    AND data.measure = 'Talon-Aux.PORT_2.2.3'
-    AND node_id = '$node'
-), 
-apogeesolar_observations as (
-  SELECT
-    "time" AS apogeesolar_observation
-  FROM $project_key.data
-  WHERE
-    $__timeFilter("time")
-    AND data.measure = 'Apogee Pyro.Solar.1.4'
+    AND data.measure = 'Hedorah.CO2.2.4'
     AND node_id = '$node'
 )
 SELECT 
   "time",
   CASE
-    WHEN (vwc_observation IS NULL) then 1
-    WHEN (stemperature_observation is NULL) then 1
-    WHEN (ecb_observation is NULL) then 1
-    WHEN (pore_observation is NULL) then 1
-    WHEN (perm_observation is NULL) then 1
-    WHEN (pressure_observation IS NULL) then 1
-    WHEN (humidity_observation IS NULL) then 1
-    WHEN (temperature_observation is NULL) then 1
-    WHEN (windspd_observation is NULL) then 1
-    WHEN (winddirection_observation is NULL) then 1
-    WHEN (rain_observation is NULL) then 1
-    WHEN (apogeesolar_observation is NULL) then 1
+    WHEN (t1_observation IS NULL) then 1
+    WHEN (t2_observation IS NULL) then 1
+    WHEN (t3_observation is NULL) then 1
+    WHEN (v1_observation is NULL) then 1
+    WHEN (v2_observation IS NULL) then 1
+    WHEN (v3_observation IS NULL) then 1
+    WHEN (ec1_observation is NULL) then 1
+    WHEN (ec2_observation is NULL) then 1
+    WHEN (ec3_observation is NULL) then 1
+    -- WHEN (ep1_observation is NULL) then 1
+    -- WHEN (ep2_observation is NULL) then 1
+    -- WHEN (ep3_observation is NULL) then 1
+    -- WHEN (perm1_observation is NULL) then 1
+    -- WHEN (perm2_observation is NULL) then 1
+    -- WHEN (perm3_observation is NULL) then 1
+    WHEN (ox_observation is NULL) then 1
+    WHEN (hed_observation is NULL) then 1
     ELSE 0
   END AS value,
   'Missing Value Flag' as metric
 FROM message_timestamps 
-  LEFT JOIN vwc_observations ON time = vwc_observation 
-  LEFT JOIN stemperature_observations ON time = stemperature_observation
-  LEFT JOIN ecb_observations ON time = ecb_observation
-  LEFT JOIN pore_observations ON time = pore_observation
-  LEFT JOIN perm_observations ON time = perm_observation
-  LEFT JOIN pressure_observations ON time = pressure_observation 
-  LEFT JOIN humidity_observations ON time = humidity_observation 
-  LEFT JOIN temperature_observations ON time = temperature_observation
-  LEFT JOIN windspd_observations ON time = windspd_observation
-  LEFT JOIN winddirection_observations ON time = winddirection_observation
-  LEFT JOIN rain_observations ON time = rain_observation
-  LEFT JOIN apogeesolar_observations ON time = apogeesolar_observation
+  LEFT JOIN t1_observations ON time = t1_observation
+  LEFT JOIN t2_observations ON time = t2_observation  
+  LEFT JOIN t3_observations ON time = t3_observation
+  LEFT JOIN v1_observations ON time = v1_observation
+  LEFT JOIN v2_observations ON time = v2_observation 
+  LEFT JOIN v3_observations ON time = v3_observation 
+  LEFT JOIN ec1_observations ON time = ec1_observation
+  LEFT JOIN ec2_observations ON time = ec2_observation
+  LEFT JOIN ec3_observations ON time = ec3_observation
+  -- LEFT JOIN ep1_observations ON time = ep1_observation
+  -- LEFT JOIN ep2_observations ON time = ep2_observation
+  -- LEFT JOIN ep3_observations ON time = ep3_observation
+  -- LEFT JOIN perm1_observations ON time = perm1_observation
+  -- LEFT JOIN perm2_observations ON time = perm2_observation
+  -- LEFT JOIN perm3_observations ON time = perm3_observation
+  LEFT JOIN ox_observations ON time = ox_observation
+  LEFT JOIN hed_observations ON time = hed_observation
 ORDER BY 1
 
 # std dev
 
-(
-WITH std_dev_timestamps as (
-  SELECT
-    DISTINCT "time" as std_dev_timestamp
-  FROM
-  (
-    SELECT
-      "time",
-      value,
-      avg(value) over w as _avg,
-      stddev(value) over w as _stddev,
-      measure
-    FROM $project_key.data
-    WHERE
-      $__timeFilter(time)
-      AND node_id = '$node'
-      AND (measure ilike '%HAAR.SHT31.Temperature.2.4%')
-    WINDOW w AS (partition by measure, time_bucket(INTERVAL '$window minutes', "time"))
-    ORDER BY time
-  ) AS d
-  WHERE
-  abs(value - _avg) > (('$stddev')::numeric)*_stddev
-),
-message_timestamps as (
-  SELECT
-    DISTINCT "time" AS "time"
-  FROM $project_key.data
-  WHERE
-    $__timeFilter("time")
-    AND node_id = '$node'
-    AND measure NOT ILIKE 'altitude'
-    AND measure NOT ILIKE 'latitude'
-    AND measure NOT ILIKE 'longitude'
-Order by 1
-)
-SELECT
-  "time",
-  CASE
-    WHEN (std_dev_timestamp is NULL) then 0
-    ELSE 1
-  END AS value,
-  'HAAR.SHT31.Temperature.2.4 Standard Deviation Warning Flag' as metric
-FROM message_timestamps LEFT JOIN std_dev_timestamps on "time" = std_dev_timestamp
-Order by 1
-)
-UNION
-(
-WITH std_dev_timestamps as (
-  SELECT
-    DISTINCT "time" as std_dev_timestamp
-  FROM
-  (
-    SELECT
-      "time",
-      value,
-      avg(value) over w as _avg,
-      stddev(value) over w as _stddev,
-      measure
-    FROM $project_key.data
-    WHERE
-      $__timeFilter(time)
-      AND node_id = '$node'
-      AND (measure ilike '%HAAR.SHT31.Humidity.2.4%')
-    WINDOW w AS (partition by measure, time_bucket(INTERVAL '$window minutes', "time"))
-    ORDER BY time
-  ) AS d
-  WHERE
-  abs(value - _avg) > (('$stddev')::numeric)*_stddev
-),
-message_timestamps as (
-  SELECT
-    DISTINCT "time" AS "time"
-  FROM $project_key.data
-  WHERE
-    $__timeFilter("time")
-    AND node_id = '$node'
-    AND measure NOT ILIKE 'altitude'
-    AND measure NOT ILIKE 'latitude'
-    AND measure NOT ILIKE 'longitude'
-Order by 1
-)
-SELECT
-  "time",
-  CASE
-    WHEN (std_dev_timestamp is NULL) then 0
-    ELSE 1
-  END AS value,
-  'HAAR.SHT31.Humidity.2.4 Standard Deviation Warning Flag' as metric
-FROM message_timestamps LEFT JOIN std_dev_timestamps on "time" = std_dev_timestamp
-Order by 1
-)
-UNION
-(
-WITH std_dev_timestamps as (
-  SELECT
-    DISTINCT "time" as std_dev_timestamp
-  FROM
-  (
-    SELECT
-      "time",
-      value,
-      avg(value) over w as _avg,
-      stddev(value) over w as _stddev,
-      measure
-    FROM $project_key.data
-    WHERE
-      $__timeFilter(time)
-      AND node_id = '$node'
-      AND (measure ilike '%HAAR.DPS368.Pressure.2.4%')
-    WINDOW w AS (partition by measure, time_bucket(INTERVAL '$window minutes', "time"))
-    ORDER BY time
-  ) AS d
-  WHERE
-  abs(value - _avg) > (('$stddev')::numeric)*_stddev
-),
-message_timestamps as (
-  SELECT
-    DISTINCT "time" AS "time"
-  FROM $project_key.data
-  WHERE
-    $__timeFilter("time")
-    AND node_id = '$node'
-    AND measure NOT ILIKE 'altitude'
-    AND measure NOT ILIKE 'latitude'
-    AND measure NOT ILIKE 'longitude'
-Order by 1
-)
-SELECT
-  "time",
-  CASE
-    WHEN (std_dev_timestamp is NULL) then 0
-    ELSE 1
-  END AS value,
-  'HAAR.DPS368.Pressure.2.4 Standard Deviation Warning Flag' as metric
-FROM message_timestamps LEFT JOIN std_dev_timestamps on "time" = std_dev_timestamp
-Order by 1
-)
-UNION
 (
 WITH std_dev_timestamps as (
   SELECT
@@ -1818,6 +1469,98 @@ SELECT
     ELSE 1
   END AS value,
   'Acclima Soil.Temperature.1.1 Standard Deviation Warning Flag' as metric
+FROM message_timestamps LEFT JOIN std_dev_timestamps on "time" = std_dev_timestamp
+Order by 1
+)
+UNION
+(
+WITH std_dev_timestamps as (
+  SELECT
+    DISTINCT "time" as std_dev_timestamp
+  FROM
+  (
+    SELECT
+      "time",
+      value,
+      avg(value) over w as _avg,
+      stddev(value) over w as _stddev,
+      measure
+    FROM $project_key.data
+    WHERE
+      $__timeFilter(time)
+      AND node_id = '$node'
+      AND (measure ilike '%Acclima Soil.Temperature.1.2%')
+    WINDOW w AS (partition by measure, time_bucket(INTERVAL '$window minutes', "time"))
+    ORDER BY time
+  ) AS d
+  WHERE
+  abs(value - _avg) > (('$stddev')::numeric)*_stddev
+),
+message_timestamps as (
+  SELECT
+    DISTINCT "time" AS "time"
+  FROM $project_key.data
+  WHERE
+    $__timeFilter("time")
+    AND node_id = '$node'
+    AND measure NOT ILIKE 'altitude'
+    AND measure NOT ILIKE 'latitude'
+    AND measure NOT ILIKE 'longitude'
+Order by 1
+)
+SELECT
+  "time",
+  CASE
+    WHEN (std_dev_timestamp is NULL) then 0
+    ELSE 1
+  END AS value,
+  'Acclima Soil.Temperature.1.2 Standard Deviation Warning Flag' as metric
+FROM message_timestamps LEFT JOIN std_dev_timestamps on "time" = std_dev_timestamp
+Order by 1
+)
+UNION
+(
+WITH std_dev_timestamps as (
+  SELECT
+    DISTINCT "time" as std_dev_timestamp
+  FROM
+  (
+    SELECT
+      "time",
+      value,
+      avg(value) over w as _avg,
+      stddev(value) over w as _stddev,
+      measure
+    FROM $project_key.data
+    WHERE
+      $__timeFilter(time)
+      AND node_id = '$node'
+      AND (measure ilike '%Acclima Soil.Temperature.1.3%')
+    WINDOW w AS (partition by measure, time_bucket(INTERVAL '$window minutes', "time"))
+    ORDER BY time
+  ) AS d
+  WHERE
+  abs(value - _avg) > (('$stddev')::numeric)*_stddev
+),
+message_timestamps as (
+  SELECT
+    DISTINCT "time" AS "time"
+  FROM $project_key.data
+  WHERE
+    $__timeFilter("time")
+    AND node_id = '$node'
+    AND measure NOT ILIKE 'altitude'
+    AND measure NOT ILIKE 'latitude'
+    AND measure NOT ILIKE 'longitude'
+Order by 1
+)
+SELECT
+  "time",
+  CASE
+    WHEN (std_dev_timestamp is NULL) then 0
+    ELSE 1
+  END AS value,
+  'Acclima Soil.Temperature.1.3 Standard Deviation Warning Flag' as metric
 FROM message_timestamps LEFT JOIN std_dev_timestamps on "time" = std_dev_timestamp
 Order by 1
 )
@@ -1884,6 +1627,98 @@ WITH std_dev_timestamps as (
     WHERE
       $__timeFilter(time)
       AND node_id = '$node'
+      AND (measure ilike '%Acclima Soil.VWC.1.2%')
+    WINDOW w AS (partition by measure, time_bucket(INTERVAL '$window minutes', "time"))
+    ORDER BY time
+  ) AS d
+  WHERE
+  abs(value - _avg) > (('$stddev')::numeric)*_stddev
+),
+message_timestamps as (
+  SELECT
+    DISTINCT "time" AS "time"
+  FROM $project_key.data
+  WHERE
+    $__timeFilter("time")
+    AND node_id = '$node'
+    AND measure NOT ILIKE 'altitude'
+    AND measure NOT ILIKE 'latitude'
+    AND measure NOT ILIKE 'longitude'
+Order by 1
+)
+SELECT
+  "time",
+  CASE
+    WHEN (std_dev_timestamp is NULL) then 0
+    ELSE 1
+  END AS value,
+  'Acclima Soil.VWC.1.2 Standard Deviation Warning Flag' as metric
+FROM message_timestamps LEFT JOIN std_dev_timestamps on "time" = std_dev_timestamp
+Order by 1
+)
+UNION
+(
+WITH std_dev_timestamps as (
+  SELECT
+    DISTINCT "time" as std_dev_timestamp
+  FROM
+  (
+    SELECT
+      "time",
+      value,
+      avg(value) over w as _avg,
+      stddev(value) over w as _stddev,
+      measure
+    FROM $project_key.data
+    WHERE
+      $__timeFilter(time)
+      AND node_id = '$node'
+      AND (measure ilike '%Acclima Soil.VWC.1.3%')
+    WINDOW w AS (partition by measure, time_bucket(INTERVAL '$window minutes', "time"))
+    ORDER BY time
+  ) AS d
+  WHERE
+  abs(value - _avg) > (('$stddev')::numeric)*_stddev
+),
+message_timestamps as (
+  SELECT
+    DISTINCT "time" AS "time"
+  FROM $project_key.data
+  WHERE
+    $__timeFilter("time")
+    AND node_id = '$node'
+    AND measure NOT ILIKE 'altitude'
+    AND measure NOT ILIKE 'latitude'
+    AND measure NOT ILIKE 'longitude'
+Order by 1
+)
+SELECT
+  "time",
+  CASE
+    WHEN (std_dev_timestamp is NULL) then 0
+    ELSE 1
+  END AS value,
+  'Acclima Soil.VWC.1.3 Standard Deviation Warning Flag' as metric
+FROM message_timestamps LEFT JOIN std_dev_timestamps on "time" = std_dev_timestamp
+Order by 1
+)
+UNION
+(
+WITH std_dev_timestamps as (
+  SELECT
+    DISTINCT "time" as std_dev_timestamp
+  FROM
+  (
+    SELECT
+      "time",
+      value,
+      avg(value) over w as _avg,
+      stddev(value) over w as _stddev,
+      measure
+    FROM $project_key.data
+    WHERE
+      $__timeFilter(time)
+      AND node_id = '$node'
       AND (measure ilike '%Acclima Soil.EC_BULK.1.1%')
     WINDOW w AS (partition by measure, time_bucket(INTERVAL '$window minutes', "time"))
     ORDER BY time
@@ -1910,6 +1745,98 @@ SELECT
     ELSE 1
   END AS value,
   'Acclima Soil.EC_BULK.1.1 Standard Deviation Warning Flag' as metric
+FROM message_timestamps LEFT JOIN std_dev_timestamps on "time" = std_dev_timestamp
+Order by 1
+)
+UNION
+(
+WITH std_dev_timestamps as (
+  SELECT
+    DISTINCT "time" as std_dev_timestamp
+  FROM
+  (
+    SELECT
+      "time",
+      value,
+      avg(value) over w as _avg,
+      stddev(value) over w as _stddev,
+      measure
+    FROM $project_key.data
+    WHERE
+      $__timeFilter(time)
+      AND node_id = '$node'
+      AND (measure ilike '%Acclima Soil.EC_BULK.1.2%')
+    WINDOW w AS (partition by measure, time_bucket(INTERVAL '$window minutes', "time"))
+    ORDER BY time
+  ) AS d
+  WHERE
+  abs(value - _avg) > (('$stddev')::numeric)*_stddev
+),
+message_timestamps as (
+  SELECT
+    DISTINCT "time" AS "time"
+  FROM $project_key.data
+  WHERE
+    $__timeFilter("time")
+    AND node_id = '$node'
+    AND measure NOT ILIKE 'altitude'
+    AND measure NOT ILIKE 'latitude'
+    AND measure NOT ILIKE 'longitude'
+Order by 1
+)
+SELECT
+  "time",
+  CASE
+    WHEN (std_dev_timestamp is NULL) then 0
+    ELSE 1
+  END AS value,
+  'Acclima Soil.EC_BULK.1.2 Standard Deviation Warning Flag' as metric
+FROM message_timestamps LEFT JOIN std_dev_timestamps on "time" = std_dev_timestamp
+Order by 1
+)
+UNION
+(
+WITH std_dev_timestamps as (
+  SELECT
+    DISTINCT "time" as std_dev_timestamp
+  FROM
+  (
+    SELECT
+      "time",
+      value,
+      avg(value) over w as _avg,
+      stddev(value) over w as _stddev,
+      measure
+    FROM $project_key.data
+    WHERE
+      $__timeFilter(time)
+      AND node_id = '$node'
+      AND (measure ilike '%Acclima Soil.EC_BULK.1.3%')
+    WINDOW w AS (partition by measure, time_bucket(INTERVAL '$window minutes', "time"))
+    ORDER BY time
+  ) AS d
+  WHERE
+  abs(value - _avg) > (('$stddev')::numeric)*_stddev
+),
+message_timestamps as (
+  SELECT
+    DISTINCT "time" AS "time"
+  FROM $project_key.data
+  WHERE
+    $__timeFilter("time")
+    AND node_id = '$node'
+    AND measure NOT ILIKE 'altitude'
+    AND measure NOT ILIKE 'latitude'
+    AND measure NOT ILIKE 'longitude'
+Order by 1
+)
+SELECT
+  "time",
+  CASE
+    WHEN (std_dev_timestamp is NULL) then 0
+    ELSE 1
+  END AS value,
+  'Acclima Soil.EC_BULK.1.3 Standard Deviation Warning Flag' as metric
 FROM message_timestamps LEFT JOIN std_dev_timestamps on "time" = std_dev_timestamp
 Order by 1
 )
@@ -1976,6 +1903,98 @@ WITH std_dev_timestamps as (
     WHERE
       $__timeFilter(time)
       AND node_id = '$node'
+      AND (measure ilike '%Acclima Soil.EC_PORE.1.2%')
+    WINDOW w AS (partition by measure, time_bucket(INTERVAL '$window minutes', "time"))
+    ORDER BY time
+  ) AS d
+  WHERE
+  abs(value - _avg) > (('$stddev')::numeric)*_stddev
+),
+message_timestamps as (
+  SELECT
+    DISTINCT "time" AS "time"
+  FROM $project_key.data
+  WHERE
+    $__timeFilter("time")
+    AND node_id = '$node'
+    AND measure NOT ILIKE 'altitude'
+    AND measure NOT ILIKE 'latitude'
+    AND measure NOT ILIKE 'longitude'
+Order by 1
+)
+SELECT
+  "time",
+  CASE
+    WHEN (std_dev_timestamp is NULL) then 0
+    ELSE 1
+  END AS value,
+  'Acclima Soil.EC_PORE.1.2 Standard Deviation Warning Flag' as metric
+FROM message_timestamps LEFT JOIN std_dev_timestamps on "time" = std_dev_timestamp
+Order by 1
+)
+UNION
+(
+WITH std_dev_timestamps as (
+  SELECT
+    DISTINCT "time" as std_dev_timestamp
+  FROM
+  (
+    SELECT
+      "time",
+      value,
+      avg(value) over w as _avg,
+      stddev(value) over w as _stddev,
+      measure
+    FROM $project_key.data
+    WHERE
+      $__timeFilter(time)
+      AND node_id = '$node'
+      AND (measure ilike '%Acclima Soil.EC_PORE.1.3%')
+    WINDOW w AS (partition by measure, time_bucket(INTERVAL '$window minutes', "time"))
+    ORDER BY time
+  ) AS d
+  WHERE
+  abs(value - _avg) > (('$stddev')::numeric)*_stddev
+),
+message_timestamps as (
+  SELECT
+    DISTINCT "time" AS "time"
+  FROM $project_key.data
+  WHERE
+    $__timeFilter("time")
+    AND node_id = '$node'
+    AND measure NOT ILIKE 'altitude'
+    AND measure NOT ILIKE 'latitude'
+    AND measure NOT ILIKE 'longitude'
+Order by 1
+)
+SELECT
+  "time",
+  CASE
+    WHEN (std_dev_timestamp is NULL) then 0
+    ELSE 1
+  END AS value,
+  'Acclima Soil.EC_PORE.1.3 Standard Deviation Warning Flag' as metric
+FROM message_timestamps LEFT JOIN std_dev_timestamps on "time" = std_dev_timestamp
+Order by 1
+)
+UNION
+(
+WITH std_dev_timestamps as (
+  SELECT
+    DISTINCT "time" as std_dev_timestamp
+  FROM
+  (
+    SELECT
+      "time",
+      value,
+      avg(value) over w as _avg,
+      stddev(value) over w as _stddev,
+      measure
+    FROM $project_key.data
+    WHERE
+      $__timeFilter(time)
+      AND node_id = '$node'
       AND (measure ilike '%Acclima Soil.Permitivity.1.1%')
     WINDOW w AS (partition by measure, time_bucket(INTERVAL '$window minutes', "time"))
     ORDER BY time
@@ -2022,7 +2041,7 @@ WITH std_dev_timestamps as (
     WHERE
       $__timeFilter(time)
       AND node_id = '$node'
-      AND (measure ilike '%Talon-Aux.PORT_3.3.3%')
+      AND (measure ilike '%Acclima Soil.Permitivity.1.2%')
     WINDOW w AS (partition by measure, time_bucket(INTERVAL '$window minutes', "time"))
     ORDER BY time
   ) AS d
@@ -2047,7 +2066,7 @@ SELECT
     WHEN (std_dev_timestamp is NULL) then 0
     ELSE 1
   END AS value,
-  'Wind Speed Standard Deviation Warning Flag' as metric
+  'Acclima Soil.Permitivity.1.2 Standard Deviation Warning Flag' as metric
 FROM message_timestamps LEFT JOIN std_dev_timestamps on "time" = std_dev_timestamp
 Order by 1
 )
@@ -2068,7 +2087,7 @@ WITH std_dev_timestamps as (
     WHERE
       $__timeFilter(time)
       AND node_id = '$node'
-      AND (measure ilike '%Talon-Aux.PORT_1.1.3%')
+      AND (measure ilike '%Acclima Soil.Permitivity.1.3%')
     WINDOW w AS (partition by measure, time_bucket(INTERVAL '$window minutes', "time"))
     ORDER BY time
   ) AS d
@@ -2093,7 +2112,7 @@ SELECT
     WHEN (std_dev_timestamp is NULL) then 0
     ELSE 1
   END AS value,
-  'Wind Direction Standard Deviation Warning Flag' as metric
+  'Acclima Soil.Permitivity.1.3 Standard Deviation Warning Flag' as metric
 FROM message_timestamps LEFT JOIN std_dev_timestamps on "time" = std_dev_timestamp
 Order by 1
 )
@@ -2114,7 +2133,7 @@ WITH std_dev_timestamps as (
     WHERE
       $__timeFilter(time)
       AND node_id = '$node'
-      AND (measure ilike '%Talon-Aux.PORT_2.2.3%')
+      AND (measure ilike '%Apogee O2.Oxygen_%.1.4%')
     WINDOW w AS (partition by measure, time_bucket(INTERVAL '$window minutes', "time"))
     ORDER BY time
   ) AS d
@@ -2139,7 +2158,7 @@ SELECT
     WHEN (std_dev_timestamp is NULL) then 0
     ELSE 1
   END AS value,
-  'Rain Standard Deviation Warning Flag' as metric
+  'Apogee O2.Oxygen_%.1.4 Standard Deviation Warning Flag' as metric
 FROM message_timestamps LEFT JOIN std_dev_timestamps on "time" = std_dev_timestamp
 Order by 1
 )
@@ -2160,7 +2179,7 @@ WITH std_dev_timestamps as (
     WHERE
       $__timeFilter(time)
       AND node_id = '$node'
-      AND (measure ilike '%Apogee Pyro.Solar.1.4%')
+      AND (measure ilike '%Hedorah.CO2.2.4%')
     WINDOW w AS (partition by measure, time_bucket(INTERVAL '$window minutes', "time"))
     ORDER BY time
   ) AS d
@@ -2185,13 +2204,13 @@ SELECT
     WHEN (std_dev_timestamp is NULL) then 0
     ELSE 1
   END AS value,
-  'Apogee Pyro.Solar.1.4 Standard Deviation Warning Flag' as metric
+  'Hedorah.CO2.2.4 Standard Deviation Warning Flag' as metric
 FROM message_timestamps LEFT JOIN std_dev_timestamps on "time" = std_dev_timestamp
 Order by 1
 )
 Order by time
 
-## Location
+## Location - transform labels to fields
 
 SELECT
   time,
@@ -2219,19 +2238,31 @@ ORDER BY x.time ASC
 
 SELECT
   to_timestamp((message::json->'Diagnostic'->>'Time')::int) as "time",
-  max((elems1->'GONK'->'SoC')::float) AS "SoC",
-  max((elems1->'GONK'->'CellVAvg')::float/1000) AS "Battery",
-  max((elems2->'Kestrel'->'PORT_V'->3)::float) AS "Solar"
+  max((elems1->'GONK'->>'SoC')::float) AS "SoC",
+ max((elems1->'GONK'->'CellVAvg')::float/1000) AS "Battery",
+  max((elems2->'Kestrel'->'PORT_V'->>3)::float) AS "Solar"
 FROM $project_key.raw, jsonb_array_elements((message::jsonb)->'Diagnostic'->'Devices') elems1, jsonb_array_elements((message::jsonb)->'Diagnostic'->'Devices') elems2
 WHERE
   $__timeFilter("publish_time") AND node_id = '$node' AND event = 'diagnostic/v2' 
   AND (elems1 ? 'GONK' OR elems2 ? 'Kestrel')
+  -- AND (elems1 ? 'GONK')
   AND is_valid_json(message) 
   AND is_valid_time(message)
 GROUP BY 1
 ORDER BY 1
 
-## Battery
+## Update time
+
+SELECT
+  max(time) as Time,
+  EXTRACT(EPOCH FROM (now() - max(time))) AS "Time Since Last Heard"
+FROM $project_key.data
+WHERE
+  node_id = '$node'
+  AND time <= now()
+ORDER BY 1;
+
+## Battery - reduce min max mean (bar gauge)
 
 SELECT
   to_timestamp((message::json->'Diagnostic'->>'Time')::int) as "time",
@@ -2247,14 +2278,3 @@ WHERE
 
 GROUP BY 1, 2
 ORDER BY 1
-
-## Update time
-
-SELECT
-  max(time) as Time,
-  EXTRACT(EPOCH FROM (now() - max(time))) AS "Time Since Last Heard"
-FROM $project_key.data
-WHERE
-  node_id = '$node'
-  AND time <= now()
-ORDER BY 1;
