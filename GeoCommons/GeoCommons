@@ -185,6 +185,7 @@ FROM range_days LEFT JOIN operating_days ON range_day = operating_day
 ORDER BY range_day
 
 ## Soil
+
 # A
 
 (
@@ -351,6 +352,7 @@ FROM range_days LEFT JOIN operating_days ON range_day = operating_day
 ORDER BY range_day
 
 ## Pyranometer
+
 # A 
  
  (
@@ -486,6 +488,7 @@ FROM range_days LEFT JOIN operating_days ON range_day = operating_day
 ORDER BY range_day
 
 ## All Data
+
 # Raw
 
 (
@@ -1309,7 +1312,7 @@ SELECT
 FROM range_days LEFT JOIN operating_days ON range_day = operating_day
 ORDER BY range_day
 
-# Location
+## Location
 
 SELECT
   time,
@@ -1333,7 +1336,7 @@ WHERE
 WHERE x.r <= 1
 ORDER BY x.time ASC
 
-# Battery
+## Battery
 
 SELECT
   to_timestamp((message::json->'Diagnostic'->>'Time')::int) as "time",
@@ -1350,7 +1353,7 @@ WHERE
 GROUP BY 1, 2
 ORDER BY 1
 
-# SoC
+## SoC
 
 SELECT
   to_timestamp((message::json->'Diagnostic'->>'Time')::int) as "time",
@@ -1366,7 +1369,7 @@ WHERE
 GROUP BY 1
 ORDER BY 1
 
-# Update Time
+## Update Time
 
 SELECT
   max(time) as Time,

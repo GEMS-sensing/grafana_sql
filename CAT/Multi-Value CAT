@@ -1,4 +1,4 @@
-# Atmospheric Temperature
+## Atmospheric Temperature
 
 SELECT
   "time",
@@ -14,7 +14,7 @@ WHERE
   Group by data.measure, data.time, data.display_name, data.value
   ORDER BY 1,2
 
-# Relative Humididty
+## Relative Humididty
 
 SELECT
   "time",
@@ -31,7 +31,7 @@ WHERE
   ORDER BY 1,2
 
 
-# Barometric Pressure
+## Barometric Pressure
 SELECT
   "time",
   measure,
@@ -47,7 +47,7 @@ WHERE
   ORDER BY 1,2
 
 
-# Rainfall
+## Rainfall
 SELECT
   "time",
   measure,
@@ -63,7 +63,7 @@ WHERE
   ORDER BY 1,2
 
 
-# Soil Temperature
+## Soil Temperature
 SELECT
   "time",
   measure,
@@ -78,7 +78,7 @@ WHERE
   Group by data.measure, data.time, data.display_name, data.value
   ORDER BY 1,2
 
-#Soil Moisture
+## Soil Moisture
 SELECT
   "time",
   measure,
@@ -93,7 +93,7 @@ WHERE
   Group by data.measure, data.time, data.display_name, data.value
   ORDER BY 1,2
 
-# Wind Speed
+## Wind Speed
 SELECT
   "time",
   measure,
@@ -108,7 +108,9 @@ WHERE
   Group by data.measure, data.time, data.display_name, data.value
   ORDER BY 1,2
 
-# All Data query 1
+## All Data 
+
+# query 1
 
 SELECT
   "time" AS "time",
@@ -123,7 +125,7 @@ WHERE
   AND measure NOT ilike 'altitude'
 ORDER BY time asc
 
-#query 2
+# query 2
 
 SELECT
   "time" AS "time",
@@ -137,7 +139,7 @@ WHERE
   AND measure NOT ilike 'altitude'
 ORDER BY time asc
 
-# Battery
+## Battery
 
 SELECT
   "time",
@@ -154,7 +156,7 @@ WHERE
   ORDER BY 1,2
 
 
-# Update time
+## Update time
 
 SELECT
   max(time) as Time,

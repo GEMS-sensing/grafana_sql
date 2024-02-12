@@ -1,4 +1,4 @@
-# Temperature
+## Temperature
 
   SELECT
     "time",
@@ -11,7 +11,7 @@
     AND (measure ilike '%HAAR.SHT31.Temperature%')
   ORDER BY time
 
-  # Humidity
+  ## Humidity
 
   SELECT
     "time",
@@ -37,7 +37,7 @@
     AND (measure ilike '%HAAR.DPS368.Press%')
   ORDER BY time
 
-  # Outside Soil
+  ## Outside Soil
 
     SELECT
     "time",
@@ -50,7 +50,7 @@
     AND (measure ilike '%Acclima Soil.VWC.1.2%' or measure ilike '%Acclima Soil.Temperature.1.2%')
   ORDER BY time
 
-  # Coop Soil 
+  ## Coop Soil 
 
     SELECT
     "time",
@@ -78,7 +78,7 @@ WHERE
   AND measure NOT ilike 'altitude'
 ORDER BY 1
 
-#SoC
+## SoC
 
 SELECT
   to_timestamp((message::json->'Diagnostic'->>'Time')::int) as "time",
@@ -94,7 +94,7 @@ WHERE
 GROUP BY 1
 ORDER BY 1
 
-# Update Time
+## Update Time
 
 SELECT
   max(time) as Time,

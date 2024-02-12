@@ -1,4 +1,4 @@
-# Overview
+## Overview
 
 # <font color="maroon"><center>GeoCommons</center></font>
 
@@ -16,6 +16,7 @@ in the University of Minnesota. Technologies are developed in the [Real-time Geo
 and supported by the [Minnesota Supercomputing Institute](https://www.msi.umn.edu).
 
 ## Map
+
 # query pepsico
 
 SELECT
@@ -67,7 +68,7 @@ WHERE
 WHERE x.r <= 1
 ORDER BY x.time ASC
 
-Query A 
+# Query A 
 
 SELECT
   time,
@@ -113,7 +114,7 @@ WHERE
 WHERE x.r <= 1
 ORDER BY x.time ASC
 
-# Nodes
+## Nodes
 
 SELECT
   display_name

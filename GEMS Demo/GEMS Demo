@@ -1,4 +1,4 @@
-# QAQC ERror flagging dashboard (txt)
+## QAQC ERror flagging dashboard (txt)
 
 The error flagging dashboard incorporates automatic Quality Assurance and Quality Control (QAQC) features. Panels are configured to autonomously flag issues based on predefined rules. There are four established flagging rules:
 
@@ -9,7 +9,7 @@ The error flagging dashboard incorporates automatic Quality Assurance and Qualit
 
 To enable or disable flags, click on the parameter name beneath each graph. For viewing multiple parameters, hold the `ctrl` key while clicking on the parameter names. The all-data table includes raw data, along with columns indicating flagged values (0 for absent, 1 for present).
 
-# battery
+## battery
 
 SELECT
   to_timestamp((message::json->'Diagnostic'->>'Time')::int) as "time",
@@ -26,7 +26,7 @@ WHERE
 GROUP BY 1, 2
 ORDER BY 1
 
-# Update Time
+## Update Time
 
 SELECT
   max(time) as Time,
@@ -38,7 +38,7 @@ WHERE
 ORDER BY 1;
 
 
-# SoC
+## SoC
 
 SELECT
   to_timestamp((message::json->'Diagnostic'->>'Time')::int) as "time",
@@ -54,7 +54,7 @@ WHERE
 GROUP BY 1
 ORDER BY 1
 
-# Location
+## Location
 
 SELECT
   time,
@@ -78,7 +78,7 @@ WHERE
 WHERE x.r <= 1
 ORDER BY x.time ASC
 
-# Atmospheric
+## Atmospheric
 
 (
 (
@@ -241,7 +241,7 @@ ORDER BY 1
 )
 ORDER BY 1
 
-#Soil
+## Soil
 
 (
 (
@@ -384,7 +384,7 @@ ORDER BY 1
 )
 ORDER BY 1
 
-# Hedorah CO2
+## Hedorah CO2
 
 (
 (
@@ -527,7 +527,7 @@ ORDER BY 1
 )
 ORDER BY 1
 
-# Gas - Auxiliary
+## Gas - Auxiliary
 
 SELECT
   "time",
@@ -759,7 +759,7 @@ SELECT
 FROM range_days LEFT JOIN operating_days ON range_day = operating_day
 ORDER BY range_day
 
-# query Missing Value
+## query Missing Value
 
 WITH message_timestamps as (
   SELECT
@@ -892,7 +892,7 @@ FROM message_timestamps
   LEFT JOIN pressure_observations ON time = pressure_observation
 ORDER BY 1
 
-# Atmospheric Stat
+## Atmospheric Stat
 
 SELECT
   "time",
@@ -905,7 +905,7 @@ WHERE
   AND (measure ilike '%HAAR.SHT31%' or measure ilike '%HAAR.DPS368.Press%')
 ORDER BY 1
 
-# Soil Stat
+## Soil Stat
 
 SELECT
   "time",
@@ -918,7 +918,7 @@ WHERE
   AND (measure ilike '%Acclima Soil.VWC.1.1%' or measure ilike '%Acclima Soil.Temperature.1.1%')
 ORDER BY 1
 
-# Hedorah CO2 Stat
+## Hedorah CO2 Stat
 
 SELECT
   "time",

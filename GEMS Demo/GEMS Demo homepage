@@ -1,4 +1,4 @@
-# Overview
+## Overview
 
 [![GEMS Sensing](https://gems.umn.edu/sites/gems.umn.edu/files/2022-09/gems_sensing_450x120.png)](https://gems.umn.edu/gems-services/gems-sensing)
 
@@ -13,7 +13,7 @@ GEMS Sensing is a Service Organization of the [GEMS Informatics Center](https://
 in the University of Minnesota. Technologies are developed in the [Real-time GeoInformation Systems Lab](https://gems.umn.edu/runck-lab-real-time-geoinformation-systems)
 and supported by the [Minnesota Supercomputing Institute](https://www.msi.umn.edu).
 
-# Map
+## Map
 
 SELECT
   time,

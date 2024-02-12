@@ -1,4 +1,4 @@
-# Raw
+## Raw
 
 SELECT
   "time" AS "time",
@@ -13,7 +13,7 @@ WHERE
   AND measure NOT ilike 'altitude'
   Order by time
 
-  # Diagnostics
+  ## Diagnostics
 
   SELECT
   to_timestamp((message::json->'Diagnostic'->>'Time')::int) as "Time",
@@ -35,7 +35,7 @@ WHERE
   
   Order by "Time"
 
-  # System Current
+  ## System Current
 
 
 SELECT
@@ -58,7 +58,7 @@ WHERE
   
   Order by time
 
-  # SoC
+  ## SoC
 
   SELECT
   to_timestamp((message::json->'Diagnostic'->>'Time')::int) as "time",
@@ -76,7 +76,7 @@ WHERE
 GROUP BY 1
 ORDER BY 1
 
-Map
+## Map
 
 SELECT
   to_timestamp((message::json->'Diagnostic'->>'Time')::int) as "time",
@@ -94,7 +94,7 @@ WHERE
 GROUP BY 1
 ORDER BY 1
 
-# Update Time
+## Update Time
 
 SELECT
   max(time) as Time,
