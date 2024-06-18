@@ -1,6 +1,6 @@
 # DRAFT README
 
-## Data Analysis SQL Queries
+## SQL Queries for Error Flagging
 
 This document provides an overview of the SQL queries used for creating the error flagging dashboard. The queries are organized by parameter and are used to extract, flag, and transform the data for display.
 
@@ -33,6 +33,7 @@ This document provides an overview of the SQL queries used for creating the erro
 
 6. **Gaseous Oxygen**
    - **Device**: Apogee SO-421
+   - **RTGS Lab Documentation**: [link](https://docs.google.com/document/d/1sSIqwZadugohV1z3KlkYNq5_NqnwWkOkqZUmqoD2ipU/edit#heading=h.chyrpdu40hh6)
    - **Data**: Extracts and flags gaseous oxygen data.
      - **Error Handling and Processing**:
        - **Value Out of Range Flag**: Flags data points where the oxygen value is below `$Apogee_SO421_MIN` or above `$Apogee_SO421_MAX`.
